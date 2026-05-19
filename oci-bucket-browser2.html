@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OCI Bucket Browser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0f14;
+      --surface: #161820;
+      --surface2: #1e2029;
+      --border: rgba(255,255,255,0.07);
+      --border-hover: rgba(255,255,255,0.15);
+      --accent: #4ade80;
+      --accent-dim: rgba(74,222,128,0.12);
+      --accent-glow: rgba(74,222,128,0.25);
+      --text: #e8eaf0;
+      --muted: #6b7280;
+      --danger: #f87171;
+      --folder-color: #60a5fa;
+      --folder-dim: rgba(96,165,250,0.1);
+    }
+
+    body {
+      font-family: 'IBM Plex Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 20px;
+    }
+
+    .shell {
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    .header {
+      margin-bottom: 32px;
+    }
+    .header-eyebrow {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .header h1 {
+      font-size: 26px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header p {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── URL input card ── */
+    .input-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+    #urlInput {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #urlInput::placeholder { color: var(--muted); }
+    #urlInput:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    #loadBtn {
+      background: var(--accent);
+      color: #0a0f0a;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-family: 'IBM Plex Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    #loadBtn:hover { opacity: 0.9; }
+    #loadBtn:active { transform: scale(0.97); }
+    #loadBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hint {
+      margin-top: 10px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .hint span { color: var(--folder-color); }
+
+    /* ── Breadcrumb ── */
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: wrap;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      min-height: 24px;
+    }
+    .breadcrumb-item {
+      cursor: pointer;
+      color: var(--folder-color);
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .breadcrumb-item:hover { background: var(--folder-dim); }
+    .breadcrumb-sep { padding: 0 2px; color: var(--muted); user-select: none; }
+    .breadcrumb-current { color: var(--muted); padding: 2px 4px; }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .stat-item { display: flex; align-items: center; gap: 5px; }
+    .stat-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+    .stat-dot.folder { background: var(--folder-color); }
+    .stat-dot.file { background: var(--accent); }
+
+    /* ── File list ── */
+    .file-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .file-list-empty {
+      padding: 48px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .entry {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .entry:last-child { border-bottom: none; }
+    .entry:hover { background: var(--surface2); }
+
+    .entry-icon {
+      font-size: 15px;
+      flex-shrink: 0;
+      width: 20px;
+      text-align: center;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .entry-icon.folder { color: var(--folder-color); }
+    .entry-icon.file { color: var(--accent); }
+    .entry-icon.back { color: var(--muted); }
+
+    .entry-name {
+      flex: 1;
+      font-size: 13px;
+      font-family: 'IBM Plex Mono', monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .entry-name.folder { color: var(--folder-color); }
+    .entry-name.file { color: var(--text); }
+    .entry-name.back { color: var(--muted); font-style: italic; }
+
+    .entry-download {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 3px 8px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .entry-download:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Loading / Error ── */
+    .loading-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border-hover);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 16px;
+      font-size: 13px;
+      color: var(--danger);
+      background: rgba(248,113,113,0.06);
+      border: 1px solid rgba(248,113,113,0.2);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    /* ── Paginator ── */
+    .pager {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface);
+    }
+    .pager-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: 'IBM Plex Sans', sans-serif;
+      transition: border-color 0.15s;
+    }
+    .pager-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .pager-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    @media (max-width: 560px) {
+      .input-row { flex-direction: column; }
+      #urlInput { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="header">
+    <div class="header-eyebrow">Oracle Cloud Infrastructure</div>
+    <h1>Bucket Browser 2.0</h1>
+    <p>Navigate pre-authenticated object storage with ease.</p>
+  </div>
+
+  <div class="input-card">
+    <div class="input-row">
+      <input id="urlInput" type="text"
+        placeholder="https://objectstorage.REGION.oraclecloud.com/p/TOKEN/n/NAMESPACE/b/BUCKET/o/" />
+      <button id="loadBtn">Browse →</button>
+    </div>
+    <div class="hint">
+      Paste your PAR URL ending with <span>/o/</span>
+    </div>
+  </div>
+
+  <div id="errorBox" style="display:none"></div>
+
+  <div class="breadcrumb" id="breadcrumb"></div>
+  <div class="stats-bar" id="statsBar" style="display:none">
+    <div class="stat-item"><span class="stat-dot folder"></span><span id="countFolders">0 folders</span></div>
+    <div class="stat-item"><span class="stat-dot file"></span><span id="countFiles">0 files</span></div>
+  </div>
+  <div class="file-list" id="fileList">
+    <div class="file-list-empty">Enter a PAR URL above to start browsing</div>
+  </div>
+
+</div>
+
+<script>
+  let rootUrl = '';
+  let crumbs = [];       // array of folder-name strings
+  const PAGE = 100;      // items per page
+  let allFolders = [];
+  let allFiles = [];
+  let page = 0;
+
+  // ── Helpers ──────────────────────────────────────────
+  function buildPrefix() {
+    return crumbs.length ? crumbs.join('/') + '/' : '';
+  }
+
+  function fileUrl(fullPath) {
+    // PAR url ends in /o/  →  append the object name
+    return rootUrl + encodeURIComponent(fullPath).replace(/%2F/g, '/');
+  }
+
+  function showError(msg) {
+    const box = document.getElementById('errorBox');
+    box.innerHTML = `<div class="error-row">⚠ ${msg}</div>`;
+    box.style.display = 'block';
+  }
+  function clearError() {
+    const box = document.getElementById('errorBox');
+    box.style.display = 'none';
+    box.innerHTML = '';
+  }
+
+  // ── Fetch one page from OCI using delimiter ───────────
+  async function fetchLevel(prefix, startWith = '') {
+    let url = rootUrl + '?delimiter=%2F&prefix=' + encodeURIComponent(prefix);
+    if (startWith) url += '&start=' + encodeURIComponent(startWith);
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`);
+    return res.json();
+  }
+
+  // Collect ALL virtual folders + files at this prefix level
+  // OCI returns prefixes (virtual dirs) in data.prefixes[] and files in data.objects[]
+  async function loadLevel(prefix) {
+    const folders = new Set();
+    const files = [];
+    let cursor = '';
+
+    do {
+      const data = await fetchLevel(prefix, cursor);
+
+      // OCI returns virtual dirs as prefixes
+      if (Array.isArray(data.prefixes)) {
+        data.prefixes.forEach(p => {
+          // p looks like "folder/subfolder/"  — strip the leading prefix and trailing /
+          const rel = p.slice(prefix.length).replace(/\/$/, '');
+          if (rel) folders.add(rel);
+        });
+      }
+
+      // Real objects (files)
+      if (Array.isArray(data.objects)) {
+        data.objects.forEach(obj => {
+          const rel = obj.name.slice(prefix.length);
+          // skip the "directory" placeholder objects (name ends with /)
+          if (rel && !rel.endsWith('/')) {
+            files.push({ name: rel, fullPath: obj.name });
+          }
+        });
+      }
+
+      cursor = data.nextStartWith || '';
+    } while (cursor);
+
+    return { folders: [...folders].sort(), files: files.sort((a, b) => a.name.localeCompare(b.name)) };
+  }
+
+  // ── Render ────────────────────────────────────────────
+  function renderBreadcrumb() {
+    const el = document.getElementById('breadcrumb');
+    el.innerHTML = '';
+
+    const root = document.createElement('span');
+    root.className = 'breadcrumb-item';
+    root.textContent = '[root]';
+    root.onclick = () => { crumbs = []; browse(); };
+    el.appendChild(root);
+
+    crumbs.forEach((name, i) => {
+      const sep = document.createElement('span');
+      sep.className = 'breadcrumb-sep';
+      sep.textContent = ' / ';
+      el.appendChild(sep);
+
+      if (i === crumbs.length - 1) {
+        const cur = document.createElement('span');
+        cur.className = 'breadcrumb-current';
+        cur.textContent = name;
+        el.appendChild(cur);
+      } else {
+        const item = document.createElement('span');
+        item.className = 'breadcrumb-item';
+        item.textContent = name;
+        const depth = i + 1;
+        item.onclick = () => { crumbs = crumbs.slice(0, depth); browse(); };
+        el.appendChild(item);
+      }
+    });
+  }
+
+  function renderList() {
+    const list = document.getElementById('fileList');
+    list.innerHTML = '';
+
+    const start = page * PAGE;
+    const pageFolders = allFolders.slice(start, start + PAGE);
+    const fileStart = Math.max(0, start - allFolders.length);
+    const pageFiles = allFiles.slice(fileStart, fileStart + PAGE - pageFolders.length);
+
+    // Back row
+    if (crumbs.length > 0) {
+      const row = document.createElement('div');
+      row.className = 'entry';
+      row.innerHTML = `
+        <span class="entry-icon back">←</span>
+        <span class="entry-name back">parent folder</span>`;
+      row.onclick = () => { crumbs.pop(); browse(); };
+      list.appendChild(row);
+    }
+
+    pageFolders.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'entry';
+      row.innerHTML = `
+        <span class="entry-icon folder">▶</span>
+        <span class="entry-name folder">${f}/</span>`;
+      row.onclick = () => { crumbs.push(f); browse(); };
+      list.appendChild(row);
+    });
+
+    pageFiles.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'entry';
+
+      const icon = document.createElement('span');
+      icon.className = 'entry-icon file';
+      icon.textContent = '·';
+
+      const name = document.createElement('span');
+      name.className = 'entry-name file';
+      name.textContent = f.name;
+      name.title = f.fullPath;
+
+      const dl = document.createElement('a');
+      dl.className = 'entry-download';
+      dl.textContent = 'download';
+      dl.href = fileUrl(f.fullPath);
+      dl.download = f.name;
+      dl.target = '_blank';
+      dl.onclick = e => e.stopPropagation();
+
+      row.appendChild(icon);
+      row.appendChild(name);
+      row.appendChild(dl);
+      list.appendChild(row);
+    });
+
+    // Empty state
+    if (pageFolders.length === 0 && pageFiles.length === 0 && crumbs.length === 0) {
+      list.innerHTML = '<div class="file-list-empty">No objects found in this bucket</div>';
+      return;
+    }
+    if (pageFolders.length === 0 && pageFiles.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'file-list-empty';
+      empty.textContent = 'This folder is empty';
+      list.appendChild(empty);
+    }
+
+    // Stats
+    const statsBar = document.getElementById('statsBar');
+    statsBar.style.display = 'flex';
+    document.getElementById('countFolders').textContent = `${allFolders.length} folder${allFolders.length !== 1 ? 's' : ''}`;
+    document.getElementById('countFiles').textContent = `${allFiles.length} file${allFiles.length !== 1 ? 's' : ''}`;
+
+    // Pagination
+    const totalItems = allFolders.length + allFiles.length;
+    const totalPages = Math.ceil(totalItems / PAGE);
+    if (totalPages > 1) {
+      const pager = document.createElement('div');
+      pager.className = 'pager';
+      const prev = document.createElement('button');
+      prev.className = 'pager-btn';
+      prev.textContent = '← prev';
+      prev.disabled = page === 0;
+      prev.onclick = () => { page--; renderList(); };
+
+      const info = document.createElement('span');
+      info.textContent = `page ${page + 1} of ${totalPages}`;
+
+      const next = document.createElement('button');
+      next.className = 'pager-btn';
+      next.textContent = 'next →';
+      next.disabled = page >= totalPages - 1;
+      next.onclick = () => { page++; renderList(); };
+
+      pager.appendChild(prev);
+      pager.appendChild(info);
+      pager.appendChild(next);
+      list.appendChild(pager);
+    }
+  }
+
+  // ── Main browse action ────────────────────────────────
+  async function browse() {
+    clearError();
+    page = 0;
+    renderBreadcrumb();
+
+    const list = document.getElementById('fileList');
+    list.innerHTML = '<div class="loading-row"><div class="spinner"></div>Loading…</div>';
+    document.getElementById('statsBar').style.display = 'none';
+    document.getElementById('loadBtn').disabled = true;
+
+    try {
+      const prefix = buildPrefix();
+      const { folders, files } = await loadLevel(prefix);
+      allFolders = folders;
+      allFiles = files;
+      renderList();
+    } catch (err) {
+      list.innerHTML = '';
+      showError(err.message || 'Unknown error');
+    } finally {
+      document.getElementById('loadBtn').disabled = false;
+    }
+  }
+
+  // ── Events ────────────────────────────────────────────
+  document.getElementById('loadBtn').addEventListener('click', () => {
+    const val = document.getElementById('urlInput').value.trim();
+    if (!val) return;
+    // Ensure trailing slash
+    rootUrl = val.endsWith('/') ? val : val + '/';
+    crumbs = [];
+    browse();
+  });
+
+  document.getElementById('urlInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('loadBtn').click();
+  });
+</script>
+</body>
+</html>
